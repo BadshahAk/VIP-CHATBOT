@@ -101,7 +101,7 @@ START = f"""
 **๏ Hie Baby🐒 ๏**
 """
 
-@bot.on_message(filters.command(["start", "aistart", f"start@{BOT_USERNAME}"]))
+@bot.on_message(filters.command(["start", "8xstart", f"start@{BOT_USERNAME}"]))
 async def restart(client, m: Message):
     accha = await m.reply_text(
                 text = random.choice(EMOJIOS),
@@ -113,7 +113,7 @@ async def restart(client, m: Message):
     await asyncio.sleep(0.1)
     await accha.edit("🌟")
     await asyncio.sleep(0.2)
-    await accha.edit("🔥CHAL AAJA @LOVERS_DUNIA ME ROMANCE KRTE HAIN💋")
+    await accha.edit("🔥CHAL AAJA FCR ME ROMANCE KRTE HAIN💋")
        
 @bot.on_message(
     filters.command(["chatbot off", f"chatbot@{BOT_USERNAME} off"], prefixes=["/", ".", "?", "-"])
