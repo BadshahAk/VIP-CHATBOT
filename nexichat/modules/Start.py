@@ -1,37 +1,33 @@
 import asyncio
 import logging
 import random
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup
-from pyrogram import filters
+import time
+import psutil
+from nexichat import _boot_
+from nexichat import get_readable_time
+from nexichat import nexichat, mongo
+from datetime import datetime
+from pymongo import MongoClient
 from pyrogram.enums import ChatType
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from pyrogram import Client, filters
-from pyrogram.types import Message
-from nexichat import nexichat
-from nexichat.database.chats import get_served_chats
-from nexichat.database.users import get_served_users
-from config import OWNER_ID
-from nexichat import nexichat
-import asyncio
-import logging
-from pyrogram import filters
-from pyrogram.errors import FloodWait
-from nexichat import nexichat
-from nexichat.database.chats import get_served_chats
-from nexichat.database.users import get_served_users
-from nexichat.database.chats import add_served_chat
-from nexichat.database.users import add_served_user
+from config import OWNER_ID, MONGO_URL, OWNER_USERNAME
+from pyrogram.errors import FloodWait, ChatAdminRequired
+from nexichat.database.chats import get_served_chats, add_served_chat
+from nexichat.database.users import get_served_users, add_served_user
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
 from nexichat.modules.helpers import (
+    START,
+    START_BOT,
+    PNG_BTN,
     CLOSE_BTN,
     HELP_BTN,
     HELP_BUTN,
     HELP_READ,
     HELP_START,
     SOURCE_READ,
-    START,
 )
 
+GSTART = """**ʜᴇʏ ᴅᴇᴀʀ {}**\n\n**ᴛʜᴀɴᴋs ғᴏʀ sᴛᴀʀᴛ ᴍᴇ ɪɴ ɢʀᴏᴜᴘ ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ʟᴀɴɢᴜᴀɢᴇ ʙʏ ᴄʟɪᴄᴋ ᴏɴ ɢɪᴠᴇɴ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴs.**\n**ᴄʟɪᴄᴋ ᴀɴᴅ sᴇʟᴇᴄᴛ ʏᴏᴜʀ ғᴀᴠᴏᴜʀɪᴛᴇ ʟᴀɴɢᴜᴀɢᴇ ᴛᴏ sᴇᴛ ᴄʜᴀᴛ ʟᴀɴɢᴜᴀɢᴇ ғᴏʀ ʙᴏᴛ ʀᴇᴘʟʏ.**\n\n**ᴛʜᴀɴᴋ ʏᴏᴜ ᴘʟᴇᴀsᴇ ᴇɴɪᴏʏ.**"""
 STICKER = [
     "CAACAgUAAx0CYlaJawABBy4vZaieO6T-Ayg3mD-JP-f0yxJngIkAAv0JAALVS_FWQY7kbQSaI-geBA",
     "CAACAgUAAx0CYlaJawABBy4rZaid77Tf70SV_CfjmbMgdJyVD8sAApwLAALGXCFXmCx8ZC5nlfQeBA",
@@ -52,6 +48,7 @@ EMOJIOS = [
     "🕊",
 ]
 
+BOT = "https://envs.sh/IL_.jpg"
 IMG = [
     "https://graph.org/file/210751796ff48991b86a3.jpg",
     "https://graph.org/file/7b4924be4179f70abcf33.jpg",
@@ -71,100 +68,47 @@ IMG = [
 
 
 
-languages = {
-    # Top 20 languages used on Telegram
-    'english': 'en', 'hindi': 'hi', 'Myanmar': 'my', 'russian': 'ru', 'spanish': 'es', 
-    'arabic': 'ar', 'turkish': 'tr', 'german': 'de', 'french': 'fr', 
-    'italian': 'it', 'persian': 'fa', 'indonesian': 'id', 'portuguese': 'pt',
-    'ukrainian': 'uk', 'filipino': 'tl', 'korean': 'ko', 'japanese': 'ja', 
-    'polish': 'pl', 'vietnamese': 'vi', 'thai': 'th', 'dutch': 'nl',
+from nexichat import db
 
-    # Top languages spoken in Bihar
-    'bhojpuri': 'bho', 'maithili': 'mai', 'urdu': 'ur', 
-    'bengali': 'bn', 'magahi': 'mag', 'angika': 'anp', 'sanskrit': 'sa', 
-    'oriya': 'or', 'nepali': 'ne', 'santhali': 'sat', 'khortha': 'kht', 
-    'kurmali': 'kyu', 'ho': 'hoc', 'munda': 'unr', 'kharwar': 'kqw', 
-    'mundari': 'unr', 'sadri': 'sck', 'pali': 'pi', 'tamil': 'ta',
+chatai = db.Word.WordDb
+lang_db = db.ChatLangDb.LangCollection
+status_db = db.ChatBotStatusDb.StatusCollection
 
-    # Top languages spoken in India
-    'telugu': 'te', 'bengali': 'bn', 'marathi': 'mr', 'tamil': 'ta', 
-    'gujarati': 'gu', 'urdu': 'ur', 'kannada': 'kn', 'malayalam': 'ml', 
-    'odia': 'or', 'punjabi': 'pa', 'assamese': 'as', 'sanskrit': 'sa', 
-    'kashmiri': 'ks', 'konkani': 'gom', 'sindhi': 'sd', 'bodo': 'brx', 
-    'dogri': 'doi', 'santali': 'sat', 'meitei': 'mni', 'nepali': 'ne',
 
-    # Other language
-    'afrikaans': 'af', 'albanian': 'sq', 'amharic': 'am', 'armenian': 'hy', 
-    'aymara': 'ay', 'azerbaijani': 'az', 'bambara': 'bm', 
-    'basque': 'eu', 'belarusian': 'be', 'bosnian': 'bs', 'bulgarian': 'bg', 
-    'catalan': 'ca', 'cebuano': 'ceb', 'chichewa': 'ny', 
-    'chinese (simplified)': 'zh-CN', 'chinese (traditional)': 'zh-TW', 
-    'corsican': 'co', 'croatian': 'hr', 'czech': 'cs', 'danish': 'da', 
-    'dhivehi': 'dv', 'esperanto': 'eo', 'estonian': 'et', 'ewe': 'ee', 
-    'finnish': 'fi', 'frisian': 'fy', 'galician': 'gl', 'georgian': 'ka', 
-    'greek': 'el', 'guarani': 'gn', 'haitian creole': 'ht', 'hausa': 'ha', 
-    'hawaiian': 'haw', 'hebrew': 'iw', 'hmong': 'hmn', 'hungarian': 'hu', 
-    'icelandic': 'is', 'igbo': 'ig', 'ilocano': 'ilo', 'irish': 'ga', 
-    'javanese': 'jw', 'kazakh': 'kk', 'khmer': 'km', 'kinyarwanda': 'rw', 
-    'krio': 'kri', 'kurdish (kurmanji)': 'ku', 'kurdish (sorani)': 'ckb', 
-    'kyrgyz': 'ky', 'lao': 'lo', 'latin': 'la', 'latvian': 'lv', 
-    'lingala': 'ln', 'lithuanian': 'lt', 'luganda': 'lg', 'luxembourgish': 'lb', 
-    'macedonian': 'mk', 'malagasy': 'mg', 'maltese': 'mt', 'maori': 'mi', 
-    'mizo': 'lus', 'mongolian': 'mn', 'myanmar': 'my', 'norwegian': 'no', 
-    'oromo': 'om', 'pashto': 'ps', 'quechua': 'qu', 'romanian': 'ro', 
-    'samoan': 'sm', 'scots gaelic': 'gd', 'sepedi': 'nso', 'serbian': 'sr', 
-    'sesotho': 'st', 'shona': 'sn', 'sinhala': 'si', 'slovak': 'sk', 
-    'slovenian': 'sl', 'somali': 'so', 'sundanese': 'su', 'swahili': 'sw', 
-    'swedish': 'sv', 'tajik': 'tg', 'tatar': 'tt', 'tigrinya': 'ti', 
-    'tsonga': 'ts', 'turkmen': 'tk', 'twi': 'ak', 'uyghur': 'ug', 
-    'uzbek': 'uz', 'welsh': 'cy', 'xhosa': 'xh', 'yiddish': 'yi', 
-    'yoruba': 'yo', 'zulu': 'zu'
-}
 
-def generate_language_buttons(page=1):
-    buttons = []
-    items_per_page = 10
-    lang_items = list(languages.items())
+
+async def bot_sys_stats():
+    bot_uptime = int(time.time() - _boot_)
+    cpu = psutil.cpu_percent(interval=0.5)
+    mem = psutil.virtual_memory().percent
+    disk = psutil.disk_usage("/").percent
+    UP = f"{get_readable_time((bot_uptime))}"
+    CPU = f"{cpu}%"
+    RAM = f"{mem}%"
+    DISK = f"{disk}%"
+    return UP, CPU, RAM, DISK
     
-    start_index = (page - 1) * items_per_page
-    end_index = start_index + items_per_page
 
-    for i in range(start_index, min(end_index, len(lang_items)), 2):
-        row = []
-        for j in range(i, min(i + 2, end_index)):  # 2 buttons per row
-            lang_name, lang_code = lang_items[j]
-            row.append(InlineKeyboardButton(lang_name.title(), callback_data=f"setlang_{lang_code}"))
-        buttons.append(row)
-
-    nav_buttons = []
-    if page > 1:
-        nav_buttons.append(InlineKeyboardButton("Back", callback_data=f"language_page_{page - 1}"))
-    if end_index < len(lang_items):
-        nav_buttons.append(InlineKeyboardButton("Next", callback_data=f"language_page_{page + 1}"))
-
-    if nav_buttons:
-        buttons.append(nav_buttons)
-
-    return buttons
-
-@nexichat.on_message(filters.command(["lang", "language", "setlang"]))
-async def set_language(client: Client, message: Message):
-    await message.reply_text(
-        "ᴘʟᴇᴀsᴇ sᴇʟᴇᴄᴛ ʏᴏᴜʀ ᴄʜᴀᴛ ʟᴀɴɢᴜᴀɢᴇ:",
-        reply_markup=InlineKeyboardMarkup(generate_language_buttons())
-    )
-
+async def set_default_status(chat_id):
+    try:
+        if not await status_db.find_one({"chat_id": chat_id}):
+            await status_db.insert_one({"chat_id": chat_id, "status": "enabled"})
+    except Exception as e:
+        print(f"Error setting default status for chat {chat_id}: {e}")
 
 @nexichat.on_message(filters.new_chat_members)
 async def welcomejej(client, message: Message):
     await add_served_chat(message.chat.id)
+    await set_default_status(message.chat.id)
+    users = len(await get_served_users())
+    chats = len(await get_served_chats())
     try:
         for member in message.new_chat_members:
-            await message.reply_photo(photo=random.choice(IMG), caption=START, reply_markup=InlineKeyboardMarkup(generate_language_buttons()))
-            
-            chat = message.chat   
             
             if member.id == nexichat.id:
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"sᴇʟᴇᴄᴛ ʟᴀɴɢᴜᴀɢᴇ", callback_data="choose_lang")]])    
+                await message.reply_photo(photo=random.choice(IMG), caption=START.format(nexichat.mention or "can't mention", users, chats), reply_markup=reply_markup)
+                chat = message.chat   
                 try:
                     invitelink = await nexichat.export_chat_invite_link(message.chat.id)
                     link = f"[ɢᴇᴛ ʟɪɴᴋ]({invitelink})"
@@ -182,6 +126,7 @@ async def welcomejej(client, message: Message):
                     chat_photo = "https://envs.sh/IL_.jpg"
                 
                 count = await nexichat.get_chat_members_count(chat.id)
+                chats = len(await get_served_chats())
                 username = chat.username if chat.username else "𝐏ʀɪᴠᴀᴛᴇ 𝐆ʀᴏᴜᴘ"
                 msg = (
                     f"**📝𝐌ᴜsɪᴄ 𝐁ᴏᴛ 𝐀ᴅᴅᴇᴅ 𝐈ɴ 𝐀 #𝐍ᴇᴡ_𝐆ʀᴏᴜᴘ**\n\n"
@@ -190,12 +135,13 @@ async def welcomejej(client, message: Message):
                     f"**🔐𝐂ʜᴀᴛ 𝐔sᴇʀɴᴀᴍᴇ:** @{username}\n"
                     f"**🖇️𝐆ʀᴏᴜᴘ 𝐋ɪɴᴋ:** {link}\n"
                     f"**📈𝐆ʀᴏᴜᴘ 𝐌ᴇᴍʙᴇʀs:** {count}\n"
-                    f"**🤔𝐀ᴅᴅᴇᴅ 𝐁ʏ:** {message.from_user.mention}"
+                    f"**🤔𝐀ᴅᴅᴇᴅ 𝐁ʏ:** {message.from_user.mention}\n\n"
+                    f"**ᴛᴏᴛᴀʟ ᴄʜᴀᴛs :** {chats}"
                 )
 
                 try:
                     owner_username = True
-                    loggin.info(message.from_user.id)
+                    
                     if owner_username:
                         await nexichat.send_photo(
                             int(OWNER_ID),
@@ -205,13 +151,8 @@ async def welcomejej(client, message: Message):
                                 [
                                     [
                                         InlineKeyboardButton(
-                                            f"😍𝐀ᴅᴅᴇᴅ 𝐁ʏ😍",
-                                            url=f"tg://openmessage?user_id={message.from_user.id}",
-                                        )
-                                    ]
-                                ]
-                            ),
-                        )
+                                            f"{message.from_user.first_name}",
+                                            user_id=message.from_user.id)]]))
                     else:
                         await nexichat.send_photo(
                             int(OWNER_ID),
@@ -221,13 +162,8 @@ async def welcomejej(client, message: Message):
                                 [
                                     [
                                         InlineKeyboardButton(
-                                            f"😍𝐀ᴅᴅᴇᴅ 𝐁ʏ😍",
-                                            url=f"tg://openmessage?user_id={message.from_user.id}",
-                                        )
-                                    ]
-                                ]
-                            ),
-                        )
+                                            f"{message.from_user.first_name}",
+                                            user_id=message.from_user.id)]]))
                 except Exception as e:
                     logging.info(f"Error fetching owner username: {e}")
                     await nexichat.send_photo(
@@ -238,13 +174,8 @@ async def welcomejej(client, message: Message):
                             [
                                 [
                                     InlineKeyboardButton(
-                                        f"😍𝐀ᴅᴅᴇᴅ 𝐁ʏ😍",
-                                        url=f"tg://openmessage?user_id={message.from_user.id}",
-                                    )
-                                ]
-                            ]
-                        ),
-                    )
+                                        f"{message.from_user.first_name}",
+                                        user_id=message.from_user.id)]]))
 
     except Exception as e:
         logging.info(f"Error: {e}")
@@ -252,27 +183,80 @@ async def welcomejej(client, message: Message):
 
 @nexichat.on_cmd(["start", "aistart"])
 async def start(_, m: Message):
+    users = len(await get_served_users())
+    chats = len(await get_served_chats())
     if m.chat.type == ChatType.PRIVATE:
         accha = await m.reply_text(
             text=random.choice(EMOJIOS),
         )
-        await asyncio.sleep(1.3)
-        await accha.edit("__ᴅιиg ᴅσиg ꨄ︎ ѕтαятιиg..__")
-        await asyncio.sleep(0.2)
-        await accha.edit("__ᴅιиg ᴅσиg ꨄ sтαятιиg.....__")
-        await asyncio.sleep(0.2)
-        await accha.edit("__ᴅιиg ᴅσиg ꨄ︎ sтαятιиg..__")
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
+        
+        await accha.edit("**__ᴅ__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅι__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιи__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅ__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσ__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσи__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ ѕ__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ sт__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ ѕтα__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ ѕтαя__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ sтαят__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ sтαятι__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ sтαятιи__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ sтαятιиg__**")
+        await asyncio.sleep(0.01)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ ѕтαятιиg.__**")
+        await asyncio.sleep(0.1)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ sтαятιиg.....__**")
+        await asyncio.sleep(0.1)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ︎ ѕтαятιиg.__**")
+        await asyncio.sleep(0.1)
+        await accha.edit("**__ᴅιиg ᴅσиg ꨄ sтαятιиg.....__**")
         await accha.delete()
+        
         umm = await m.reply_sticker(sticker=random.choice(STICKER))
-        await asyncio.sleep(2)
-        await umm.delete()
-        await m.reply_text(text=f"""**๏ ʜᴇʏ..**\n\n**🥀ʜᴏᴡ ᴀʀᴇ ʏᴏᴜ ʙᴀʙʏ...?**""")
+        chat_photo = BOT  
+        if m.chat.photo:
+            try:
+                userss_photo = await nexichat.download_media(m.chat.photo.big_file_id)
+                await umm.delete()
+                if userss_photo:
+                    chat_photo = userss_photo
+            except AttributeError:
+                chat_photo = BOT  
+
+        users = len(await get_served_users())
+        chats = len(await get_served_chats())
+        UP, CPU, RAM, DISK = await bot_sys_stats()
+        await m.reply_photo(photo=chat_photo, caption=START.format(nexichat.mention or "can't mention", users, chats, UP), reply_markup=InlineKeyboardMarkup(START_BOT))
         await add_served_user(m.chat.id)
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"{m.chat.first_name}", user_id=m.chat.id)]])
+        await nexichat.send_photo(int(OWNER_ID), photo=chat_photo, caption=f"{m.from_user.mention} ʜᴀs sᴛᴀʀᴛᴇᴅ ʙᴏᴛ. \n\n**ɴᴀᴍᴇ :** {m.chat.first_name}\n**ᴜsᴇʀɴᴀᴍᴇ :** @{m.chat.username}\n**ɪᴅ :** {m.chat.id}\n\n**ᴛᴏᴛᴀʟ ᴜsᴇʀs :** {users}", reply_markup=keyboard)
+        
     else:
         await m.reply_photo(
             photo=random.choice(IMG),
-            caption=START,
+            caption=GSTART.format(m.from_user.mention or "can't mention"),
             reply_markup=InlineKeyboardMarkup(HELP_START),
         )
         await add_served_chat(m.chat.id)
@@ -305,46 +289,12 @@ async def repo(_, m: Message):
     )
 
 
-import random
-from datetime import datetime
-
-from pyrogram.enums import ChatType
-from pyrogram.types import InlineKeyboardMarkup, Message
-
-from config import OWNER_USERNAME
-from nexichat import nexichat
-from nexichat.database.chats import add_served_chat
-from nexichat.database.users import add_served_user
-from nexichat.modules.helpers import PNG_BTN
-
-IMG = [
-    "https://graph.org/file/210751796ff48991b86a3.jpg",
-    "https://graph.org/file/7b4924be4179f70abcf33.jpg",
-    "https://graph.org/file/f6d8e64246bddc26b4f66.jpg",
-    "https://graph.org/file/63d3ec1ca2c965d6ef210.jpg",
-    "https://graph.org/file/9f12dc2a668d40875deb5.jpg",
-    "https://graph.org/file/0f89cd8d55fd9bb5130e1.jpg",
-    "https://graph.org/file/e5eb7673737ada9679b47.jpg",
-    "https://graph.org/file/2e4dfe1fa5185c7ff1bfd.jpg",
-    "https://graph.org/file/36af423228372b8899f20.jpg",
-    "https://graph.org/file/c698fa9b221772c2a4f3a.jpg",
-    "https://graph.org/file/61b08f41855afd9bed0ab.jpg",
-    "https://graph.org/file/744b1a83aac76cb3779eb.jpg",
-    "https://graph.org/file/814cd9a25dd78480d0ce1.jpg",
-    "https://graph.org/file/e8b472bcfa6680f6c6a5d.jpg",
-]
-
-
-STICKER = [
-    "CAACAgUAAx0CYlaJawABBy4vZaieO6T-Ayg3mD-JP-f0yxJngIkAAv0JAALVS_FWQY7kbQSaI-geBA",
-    "CAACAgUAAx0CYlaJawABBy4rZaid77Tf70SV_CfjmbMgdJyVD8sAApwLAALGXCFXmCx8ZC5nlfQeBA",
-    "CAACAgUAAx0CYlaJawABBy4jZaidvIXNPYnpAjNnKgzaHmh3cvoAAiwIAAIda2lVNdNI2QABHuVVHgQ",
-]
 
 
 @nexichat.on_cmd("ping")
 async def ping(_, message: Message):
     start = datetime.now()
+    UP, CPU, RAM, DISK = await bot_sys_stats()
     loda = await message.reply_photo(
         photo=random.choice(IMG),
         caption="ᴘɪɴɢɪɴɢ...",
@@ -352,7 +302,7 @@ async def ping(_, message: Message):
 
     ms = (datetime.now() - start).microseconds / 1000
     await loda.edit_text(
-        text=f"нey вαву!!\n{nexichat.name} ᴄʜᴀᴛʙᴏᴛ ιѕ alιve 🥀 αnd worĸιng ғιne wιтн a pιng oғ\n➥ `{ms}` ms\n\n<b>|| мαdє ωιтн ❣️ ву [ᴠɪᴘ ʙᴏʏ](https://t.me/{OWNER_USERNAME}) ||</b>",
+        text=f"нey вαву!!\n{nexichat.name} ᴄʜᴀᴛʙᴏᴛ ιѕ alιve 🥀 αnd worĸιng ғιne wιтн a pιng oғ\n\n**➥** `{ms}` ms\n**➲ ᴄᴘᴜ:** {CPU}\n**➲ ʀᴀᴍ:** {RAM}\n**➲ ᴅɪsᴋ:** {DISK}\n**➲ ᴜᴘᴛɪᴍᴇ »** {UP}\n\n<b>||**๏ мαdє ωιтн ❣️ ву [ᴠɪᴘ ʙᴏʏ](https://t.me/{OWNER_USERNAME}) **||</b>",
         reply_markup=InlineKeyboardMarkup(PNG_BTN),
     )
     if message.chat.type == ChatType.PRIVATE:

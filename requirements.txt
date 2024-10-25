@@ -11,3 +11,7 @@ lexica-api
 MukeshAPI
 deep-translator
 pycgi
+apscheduler
+Flask
+uvloop
+psutil
