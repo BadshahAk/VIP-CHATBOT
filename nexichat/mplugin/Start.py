@@ -1,23 +1,26 @@
 import asyncio
-import os
 import logging
 import random
 import time
 import psutil
 import config
+import os
 from nexichat import _boot_
 from nexichat import get_readable_time
-from nexichat import nexichat, mongo, SUDOERS
+from nexichat.mplugin.helpers import is_owner
+from nexichat import mongo
 from datetime import datetime
 from pymongo import MongoClient
 from pyrogram.enums import ChatType
 from pyrogram import Client, filters
+from nexichat import CLONE_OWNERS, db
 from config import OWNER_ID, MONGO_URL, OWNER_USERNAME
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from nexichat.database.chats import get_served_chats, add_served_chat
 from nexichat.database.users import get_served_users, add_served_user
+from nexichat.database.clonestats import get_served_cchats, get_served_cusers, add_served_cuser, add_served_cchat
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
-from nexichat.modules.helpers import (
+from nexichat.mplugin.helpers import (
     START,
     START_BOT,
     PNG_BTN,
@@ -28,6 +31,7 @@ from nexichat.modules.helpers import (
     HELP_START,
     SOURCE_READ,
 )
+
 OK = "**ʜᴇʏ👀**"
 AUTO_MSG = f"""{os.getenv("AUTO_MSG")}""" if os.getenv("AUTO_MSG") else OK
 GSTART = """**ʜᴇʏ ᴅᴇᴀʀ {}**\n\n**ᴛʜᴀɴᴋs ғᴏʀ sᴛᴀʀᴛ ᴍᴇ ɪɴ ɢʀᴏᴜᴘ ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ʟᴀɴɢᴜᴀɢᴇ ʙʏ ᴄʟɪᴄᴋ ᴏɴ ɢɪᴠᴇɴ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴs.**\n**ᴄʟɪᴄᴋ ᴀɴᴅ sᴇʟᴇᴄᴛ ʏᴏᴜʀ ғᴀᴠᴏᴜʀɪᴛᴇ ʟᴀɴɢᴜᴀɢᴇ ᴛᴏ sᴇᴛ ᴄʜᴀᴛ ʟᴀɴɢᴜᴀɢᴇ ғᴏʀ ʙᴏᴛ ʀᴇᴘʟʏ.**\n\n**ᴛʜᴀɴᴋ ʏᴏᴜ ᴘʟᴇᴀsᴇ ᴇɴɪᴏʏ.**"""
@@ -76,6 +80,13 @@ from nexichat import db
 chatai = db.Word.WordDb
 lang_db = db.ChatLangDb.LangCollection
 status_db = db.ChatBotStatusDb.StatusCollection
+cloneownerdb = db.clone_owners
+
+async def get_clone_owner(bot_id):
+    data = await cloneownerdb.find_one({"bot_id": bot_id})
+    if data:
+        return data["user_id"]
+    return None
 
 
 async def bot_sys_stats():
@@ -98,17 +109,21 @@ async def set_default_status(chat_id):
         print(f"Error setting default status for chat {chat_id}: {e}")
 
 
-@nexichat.on_message(filters.new_chat_members)
+
+
+
+@Client.on_message(filters.new_chat_members)
 async def welcomejej(client, message: Message):
     chat = message.chat
+    bot_id = client.me.id
+    await add_served_cchat(bot_id, message.chat.id)
     await add_served_chat(message.chat.id)
     await set_default_status(message.chat.id)
-    users = len(await get_served_users())
-    chats = len(await get_served_chats())
+    users = len(await get_served_cusers(bot_id))
+    chats = len(await get_served_cchats(bot_id))
     try:
         for member in message.new_chat_members:
-            
-            if member.id == nexichat.id:
+            if member.id == client.me.id:
                 try:
                     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("sᴇʟᴇᴄᴛ ʟᴀɴɢᴜᴀɢᴇ", callback_data="choose_lang")]])    
                     await message.reply_text(text="**тнαикѕ ꜰᴏʀ ᴀᴅᴅɪɴɢ ᴍᴇ ɪɴ ᴛʜɪꜱ ɢʀᴏᴜᴩ.**\n\n**ᴋɪɴᴅʟʏ  ꜱᴇʟᴇᴄᴛ  ʙᴏᴛ  ʟᴀɴɢᴜᴀɢᴇ  ꜰᴏʀ  ᴛʜɪꜱ  ɢʀᴏᴜᴩ  ʙʏ  ᴛʏᴩᴇ  ☞  /lang**", reply_markup=reply_markup)
@@ -117,14 +132,13 @@ async def welcomejej(client, message: Message):
                     print(f"{e}")
                     pass
                 try:
-                    invitelink = await nexichat.export_chat_invite_link(message.chat.id)
-                                                                        
+                    invitelink = await client.export_chat_invite_link(message.chat.id)
                     link = f"[ɢᴇᴛ ʟɪɴᴋ]({invitelink})"
                 except ChatAdminRequired:
                     link = "No Link"
-                    
+                
                 try:
-                    groups_photo = await nexichat.download_media(
+                    groups_photo = await client.download_media(
                         chat.photo.big_file_id, file_name=f"chatpp{chat.id}.png"
                     )
                     chat_photo = (
@@ -135,8 +149,7 @@ async def welcomejej(client, message: Message):
                 except Exception as e:
                     pass
 
-                count = await nexichat.get_chat_members_count(chat.id)
-                chats = len(await get_served_chats())
+                count = await client.get_chat_members_count(chat.id)
                 username = chat.username if chat.username else "𝐏ʀɪᴠᴀᴛᴇ 𝐆ʀᴏᴜᴘ"
                 msg = (
                     f"**📝𝐌ᴜsɪᴄ 𝐁ᴏᴛ 𝐀ᴅᴅᴇᴅ 𝐈ɴ 𝐀 #𝐍ᴇᴡ_𝐆ʀᴏᴜᴘ**\n\n"
@@ -150,162 +163,75 @@ async def welcomejej(client, message: Message):
                 )
 
                 try:
-                    OWNER = config.OWNER_ID
-                    if OWNER:
-                        await nexichat.send_photo(
-                            int(OWNER_ID),
+                    bot_id = client.me.id
+                    owner_id = await get_clone_owner(bot_id)
+                    
+                    if owner_id:
+                        await client.send_photo(
+                            int(owner_id),
                             photo=chat_photo,
                             caption=msg,
-                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"{message.from_user.first_name}", user_id=message.from_user.id)]]))
-                                
-                    
+                            reply_markup=InlineKeyboardMarkup(
+                                [[InlineKeyboardButton(f"{message.from_user.first_name}", user_id=message.from_user.id)]]
+                            )
+                        )
                 except Exception as e:
-                    print(f"Please Provide me correct owner id for send logs")
-                    await nexichat.send_photo(
-                        int(OWNER_ID),
-                        photo=chat_photo,
-                        caption=msg,
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"{message.from_user.first_name}", user_id=message.from_user.id)]]))
+                    print(f"Err: {e}")
     except Exception as e:
         print(f"Err: {e}")
 
 
-from pathlib import Path
-import os
-import time
-import io
-
-@nexichat.on_message(
-    filters.command(["ls"]) & filters.user(int(OWNER_ID))
-)
-async def ls(_, m: Message):
-    "To list all files and folders."
-
-    cat = "".join(m.text.split(maxsplit=1)[1:])
-    path = cat or os.getcwd()
-    if not os.path.exists(path):
-        await m.reply_text(
-            f"There is no such directory or file with the name `{cat}`. Check again."
-        )
-        return
-
-    path = Path(cat) if cat else os.getcwd()
-    if os.path.isdir(path):
-        if cat:
-            msg = f"Folders and Files in `{path}`:\n"
-        else:
-            msg = "Folders and Files in Current Directory:\n"
-        lists = os.listdir(path)
-        files = ""
-        folders = ""
-        for contents in sorted(lists):
-            catpath = os.path.join(path, contents)
-            if not os.path.isdir(catpath):
-                size = os.stat(catpath).st_size
-                if str(contents).endswith((".mp3", ".flac", ".wav", ".m4a")):
-                    files += f"🎵`{contents}`\n"
-                elif str(contents).endswith((".opus")):
-                    files += f"🎙`{contents}`\n"
-                elif str(contents).endswith((".mkv", ".mp4", ".webm", ".avi", ".mov", ".flv")):
-                    files += f"🎞`{contents}`\n"
-                elif str(contents).endswith((".zip", ".tar", ".tar.gz", ".rar")):
-                    files += f"🗜`{contents}`\n"
-                elif str(contents).endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico")):
-                    files += f"🖼`{contents}`\n"
-                else:
-                    files += f"📄`{contents}`\n"
-            else:
-                folders += f"📁`{contents}`\n"
-        msg = msg + folders + files if files or folders else f"{msg}__empty path__"
-    else:
-        size = os.stat(path).st_size
-        msg = "The details of the given file:\n"
-        if str(path).endswith((".mp3", ".flac", ".wav", ".m4a")):
-            mode = "🎵"
-        elif str(path).endswith((".opus")):
-            mode = "🎙"
-        elif str(path).endswith((".mkv", ".mp4", ".webm", ".avi", ".mov", ".flv")):
-            mode = "🎞"
-        elif str(path).endswith((".zip", ".tar", ".tar.gz", ".rar")):
-            mode = "🗜"
-        elif str(path).endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico")):
-            mode = "🖼"
-        else:
-            mode = "📄"
-        time2 = time.ctime(os.path.getmtime(path))
-        time3 = time.ctime(os.path.getatime(path))
-        msg += f"**Location:** `{path}`\n"
-        msg += f"**Icon:** `{mode}`\n"
-        msg += f"**Size:** `{humanbytes(size)}`\n"
-        msg += f"**Last Modified Time:** `{time2}`\n"
-        msg += f"**Last Accessed Time:** `{time3}`"
-
-    if len(msg) > 4096:
-        with io.BytesIO(str.encode(msg)) as out_file:
-            out_file.name = "ls.txt"
-            await m.reply_document(
-                out_file,
-                caption=path,
-            )
-    else:
-        await m.reply_text(msg)
 
 
-@nexichat.on_cmd(["start", "aistart"])
-async def start(_, m: Message):
-    users = len(await get_served_users())
-    chats = len(await get_served_chats())
+@Client.on_message(filters.command(["start", "aistart"]))
+async def start(client: Client, m: Message):
+    bot_id = client.me.id
+    users = len(await get_served_cusers(bot_id))
+    chats = len(await get_served_cchats(bot_id))
+    
     if m.chat.type == ChatType.PRIVATE:
         accha = await m.reply_text(
             text=random.choice(EMOJIOS),
         )
-        await asyncio.sleep(0.5)
         
-     
-        await accha.edit("**__ꨄ︎ ѕ__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ sт__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ ѕтα__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ ѕтαя__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ sтαят__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ sтαятι__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ sтαятιи__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ sтαятιиg__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ ѕтαятιиg.__**")
-        await asyncio.sleep(0.1)
-        await accha.edit("**__ꨄ sтαятιиg.....__**")
-        await asyncio.sleep(0.1)
-        await accha.edit("**__ꨄ︎ ѕтαятιиg.__**")
-        await asyncio.sleep(0.1)
-        await accha.edit("**__ꨄ sтαятιиg.....__**")
+        animation_steps = [
+            "⚡ᴅ", "⚡ᴅι", "⚡ᴅιи", "⚡ᴅιиg", "⚡ᴅιиg ᴅ", "⚡ᴅιиg ᴅσ", "⚡ᴅιиg ᴅσи", "⚡ᴅιиg ᴅσиg", "⚡ᴅιиg ᴅσиg ꨄ︎", "⚡sᴛαятɪɴɢ..."
+        ]
+
+        for step in animation_steps:
+            await accha.edit(f"**__{step}__**")
+            await asyncio.sleep(0.01)
+
         await accha.delete()
         
         umm = await m.reply_sticker(sticker=random.choice(STICKER))
         chat_photo = BOT  
         if m.chat.photo:
             try:
-                userss_photo = await nexichat.download_media(m.chat.photo.big_file_id)
+                userss_photo = await client.download_media(m.chat.photo.big_file_id)
                 await umm.delete()
                 if userss_photo:
                     chat_photo = userss_photo
             except AttributeError:
                 chat_photo = BOT  
 
-        users = len(await get_served_users())
-        chats = len(await get_served_chats())
+        users = len(await get_served_cusers(bot_id))
+        chats = len(await get_served_cchats(bot_id))
         UP, CPU, RAM, DISK = await bot_sys_stats()
-        await m.reply_photo(photo=chat_photo, caption=START.format(nexichat.mention or "can't mention", users, chats, UP), reply_markup=InlineKeyboardMarkup(START_BOT))
+        await m.reply_photo(photo=chat_photo, caption=START.format(users, chats, UP), reply_markup=InlineKeyboardMarkup(START_BOT))
         await m.reply_text(f"**{AUTO_MSG}**")
+        await add_served_cuser(bot_id, m.chat.id) 
         await add_served_user(m.chat.id)
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"{m.chat.first_name}", user_id=m.chat.id)]])
-        await nexichat.send_photo(int(OWNER_ID), photo=chat_photo, caption=f"{m.from_user.mention} ʜᴀs sᴛᴀʀᴛᴇᴅ ʙᴏᴛ. \n\n**ɴᴀᴍᴇ :** {m.chat.first_name}\n**ᴜsᴇʀɴᴀᴍᴇ :** @{m.chat.username}\n**ɪᴅ :** {m.chat.id}\n\n**ᴛᴏᴛᴀʟ ᴜsᴇʀs :** {users}", reply_markup=keyboard)
+
+        owner_id = await get_clone_owner(bot_id) 
+        if owner_id:
+            await client.send_photo(
+                int(owner_id),
+                photo=chat_photo,
+                caption=f"{m.from_user.mention} ʜᴀs sᴛᴀʀᴛᴇᴅ ʙᴏᴛ. \n\n**ɴᴀᴍᴇ :** {m.chat.first_name}\n**ᴜsᴇʀɴᴀᴍᴇ :** @{m.chat.username}\n**ɪᴅ :** {m.chat.id}\n\n**ᴛᴏᴛᴀʟ ᴜsᴇʀs :** {users}",
+                reply_markup=keyboard
+            )
         
     else:
         await m.reply_photo(
@@ -314,11 +240,12 @@ async def start(_, m: Message):
             reply_markup=InlineKeyboardMarkup(HELP_START),
         )
         await m.reply_text(f"**{AUTO_MSG}**")
+        await add_served_cchat(bot_id, m.chat.id)
         await add_served_chat(m.chat.id)
 
-
-@nexichat.on_cmd("help")
-async def help(client: nexichat, m: Message):
+@Client.on_message(filters.command("help"))
+async def help(client: Client, m: Message):
+    bot_id = client.me.id
     if m.chat.type == ChatType.PRIVATE:
         hmm = await m.reply_photo(
             photo=random.choice(IMG),
@@ -332,11 +259,12 @@ async def help(client: nexichat, m: Message):
             caption="**ʜᴇʏ, ᴘᴍ ᴍᴇ ғᴏʀ ʜᴇʟᴘ ᴄᴏᴍᴍᴀɴᴅs!**",
             reply_markup=InlineKeyboardMarkup(HELP_BUTN),
         )
+        await add_served_cchat(bot_id, m.chat.id)
         await add_served_chat(m.chat.id)
 
 
-@nexichat.on_cmd("repo")
-async def repo(_, m: Message):
+@Client.on_message(filters.command("repo"))
+async def repo(client: Client, m: Message):
     await m.reply_text(
         text=SOURCE_READ,
         reply_markup=InlineKeyboardMarkup(CLOSE_BTN),
@@ -345,8 +273,10 @@ async def repo(_, m: Message):
 
 
 
-@nexichat.on_cmd("ping")
-async def ping(_, message: Message):
+
+@Client.on_message(filters.command("ping"))
+async def ping(client: Client, message: Message):
+    bot_id = client.me.id
     start = datetime.now()
     UP, CPU, RAM, DISK = await bot_sys_stats()
     loda = await message.reply_photo(
@@ -356,24 +286,28 @@ async def ping(_, message: Message):
 
     ms = (datetime.now() - start).microseconds / 1000
     await loda.edit_text(
-        text=f"нey вαву!!\n{nexichat.name} ᴄʜᴀᴛʙᴏᴛ ιѕ alιve 🥀 αnd worĸιng ғιne wιтн a pιng oғ\n\n**➥** `{ms}` ms\n**➲ ᴄᴘᴜ:** {CPU}\n**➲ ʀᴀᴍ:** {RAM}\n**➲ ᴅɪsᴋ:** {DISK}\n**➲ ᴜᴘᴛɪᴍᴇ »** {UP}\n\n<b>||**๏ мαdє ωιтн ❣️ ву [ᴠɪᴘ ʙᴏʏ](https://t.me/{OWNER_USERNAME}) **||</b>",
+        text=f"нey вαву!!\n{(await client.get_me()).mention} ᴄʜᴀᴛʙᴏᴛ ιѕ alιve 🥀 αnd worĸιng ғιne wιтн a pιng oғ\n\n**➥** `{ms}` ms\n**➲ ᴄᴘᴜ:** {CPU}\n**➲ ʀᴀᴍ:** {RAM}\n**➲ ᴅɪsᴋ:** {DISK}\n**➲ ᴜᴘᴛɪᴍᴇ »** {UP}\n\n<b>||**๏ мαdє ωιтн ❣️ ву [ᴠɪᴘ ʙᴏʏ](https://t.me/{OWNER_USERNAME}) **||</b>",
         reply_markup=InlineKeyboardMarkup(PNG_BTN),
     )
     if message.chat.type == ChatType.PRIVATE:
+        await add_served_cuser(bot_id, message.from_user.id)
         await add_served_user(message.from_user.id)
     else:
+        await add_served_cchat(bot_id, message.chat.id)
         await add_served_chat(message.chat.id)
 
 
-@nexichat.on_message(filters.command("stats"))
+@Client.on_message(filters.command("stats"))
 async def stats(cli: Client, message: Message):
-    users = len(await get_served_users())
-    chats = len(await get_served_chats())
+    bot_id = (await cli.get_me()).id
+    users = len(await get_served_cusers(bot_id))
+    chats = len(await get_served_cchats(bot_id))
+    
     await message.reply_text(
-        f"""{(await cli.get_me()).mention} ᴄʜᴀᴛʙᴏᴛ sᴛᴀᴛs:
+        f"""{(await cli.get_me()).mention} Chatbot Stats:
 
-➻ **ᴄʜᴀᴛs :** {chats}
-➻ **ᴜsᴇʀs :** {users}"""
+➻ **Chats:** {chats}
+➻ **Users:** {users}"""
     )
 
 
@@ -382,7 +316,7 @@ from pyrogram.enums import ParseMode
 from nexichat import nexichat
 
 
-@nexichat.on_cmd("id")
+@Client.on_message(filters.command("id"))
 async def getid(client, message):
     chat = message.chat
     your_id = message.from_user.id
@@ -440,11 +374,15 @@ IS_BROADCASTING = False
 broadcast_lock = asyncio.Lock()
 
 
-@nexichat.on_message(
-    filters.command(["broadcast", "gcast"]) & SUDOERS
-)
+@Client.on_message(filters.command(["broadcast", "gcast"]))
 async def broadcast_message(client, message):
     global IS_BROADCASTING
+    bot_id = (await client.get_me()).id
+    user_id = message.from_user.id
+    if not await is_owner(bot_id, user_id):
+        await message.reply_text("You don't have permission to use this command on this bot.")
+        return
+        
     async with broadcast_lock:
         if IS_BROADCASTING:
             return await message.reply_text(
@@ -501,7 +439,7 @@ async def broadcast_message(client, message):
             if not flags.get("-nogroup", False):
                 sent = 0
                 pin_count = 0
-                chats = await get_served_chats()
+                chats = await get_served_cchats(bot_id)
 
                 for chat in chats:
                     chat_id = int(chat["chat_id"])
@@ -509,11 +447,11 @@ async def broadcast_message(client, message):
                         continue
                     try:
                         if broadcast_type == "reply":
-                            m = await nexichat.forward_messages(
+                            m = await client.forward_messages(
                                 chat_id, message.chat.id, [broadcast_content.id]
                             )
                         else:
-                            m = await nexichat.send_message(
+                            m = await client.send_message(
                                 chat_id, text=broadcast_content
                             )
                         sent += 1
@@ -548,17 +486,17 @@ async def broadcast_message(client, message):
 
             if flags.get("-user", False):
                 susr = 0
-                users = await get_served_users()
+                users = await get_served_cusers(bot_id)
 
                 for user in users:
                     user_id = int(user["user_id"])
                     try:
                         if broadcast_type == "reply":
-                            m = await nexichat.forward_messages(
+                            m = await client.forward_messages(
                                 user_id, message.chat.id, [broadcast_content.id]
                             )
                         else:
-                            m = await nexichat.send_message(
+                            m = await client.send_message(
                                 user_id, text=broadcast_content
                             )
                         susr += 1

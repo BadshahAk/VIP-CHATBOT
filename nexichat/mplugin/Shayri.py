@@ -1,13 +1,14 @@
 import random
 from nexichat.database import get_served_chats
-from pyrogram import Client, filters
+from pyrogram import Client
+from pyrogram import filters
 import os
+from nexichat.mplugin.helpers import is_owner
 from nexichat import nexichat
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pyrogram import filters
 import random
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
-
 scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 user_last_message_time = {}
 user_command_count = {}
@@ -64,7 +65,7 @@ morning_shayari = [ "🌅 ɢᴏᴏᴅ ᴍᴏʀɴɪɴɢ! ᴍᴀʏ ʏᴏᴜʀ ᴅ�
 SHAYRI_COMMAND = ["gf", "bf", "shayri", "sari", "shari", "love"]
 
 
-@nexichat.on_message(filters.command(SHAYRI_COMMAND))
+@Client.on_message(filters.command(SHAYRI_COMMAND))
 async def shayri(client: Client, message: Message):
     
     await message.reply_text(
@@ -72,79 +73,11 @@ async def shayri(client: Client, message: Message):
         reply_markup=InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
-                        "✨𝚂𝚄𝙿𝙿𝙾𝚁𝚃✨", url=f"https://t.me/TG_FRIENDSS"
-                    ),
-                    InlineKeyboardButton(
-                        "✨𝙾𝙵𝙵𝙸𝙲𝙴✨", url=f"https://t.me/VIP_CREATORS"
-                    ),
+                    InlineKeyboardButton("✨𝚂𝚄𝙿𝙿𝙾𝚁𝚃✨", url="https://t.me/TG_FRIENDSS"),
+                    InlineKeyboardButton("✨𝙾𝙵𝙵𝙸𝙲𝙴✨", url="https://t.me/VIP_CREATORS"),
                 ]
-            ]
+           ]
         ),
     )
-
-
-
-add_buttons = InlineKeyboardMarkup(
-    [
-        [
-            InlineKeyboardButton(
-                text="๏ ᴀᴅᴅ ᴍᴇ ɪɴ ɢʀᴏᴜᴘ ๏",
-                url=f"https://t.me/{nexichat.username}?startgroup=true",
-            )
-        ]
-    ]
-)
-
-
-async def send_good_night():
-    chats = []
-    schats = await get_served_chats()
-    for chat in schats:
-        chats.append(int(chat["chat_id"]))
-    if len(chats) == 0:
-        return
-    for chat_id in chats:
-        try:
-            shayari = random.choice(night_shayari)
-            await nexichat.send_photo(
-                chat_id,
-                photo="https://telegra.ph//file/06649d4d0bbf4285238ee.jpg",
-                caption=f"**{shayari}**",
-                reply_markup=add_buttons,
-            )
-        except Exception as e:
-            continue
-
-async def send_good_morning():
-    chats = []
-    schats = await get_served_chats()
-    for chat in schats:
-        chats.append(int(chat["chat_id"]))
-    if len(chats) == 0:
-        return
-    for chat_id in chats:
-        try:
-            shayari = random.choice(morning_shayari)
-            await nexichat.send_photo(
-                chat_id,
-                photo="https://telegra.ph//file/14ec9c3ff42b59867040a.jpg",
-                caption=f"**{shayari}**",
-                reply_markup=add_buttons,
-            )
-        except Exception as e:
-            continue
-
-async def restart_nexichat():
-    os.system(f"kill -9 {os.getpid()} && bash start")
-
-#scheduler.add_job(send_good_night, trigger="cron", hour=23, minute=50)
-#scheduler.add_job(send_good_morning, trigger="cron", hour=6, minute=0)
-scheduler.add_job(restart_nexichat, trigger="cron", hour=0, minute=0)
-scheduler.add_job(restart_nexichat, trigger="cron", hour=7, minute=0)
-scheduler.add_job(restart_nexichat, trigger="cron", hour=12, minute=0)
-scheduler.add_job(restart_nexichat, trigger="cron", hour=15, minute=0)
-scheduler.add_job(restart_nexichat, trigger="cron", hour=18, minute=0)
-scheduler.add_job(restart_nexichat, trigger="cron", hour=21, minute=0)
-scheduler.start()
+    
 
